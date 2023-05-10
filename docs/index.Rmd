@@ -1,0 +1,384 @@
+
+# Importing and Loading Packages
+
+```{r, results = FALSE, message=FALSE, warning=FALSE}
+
+
+install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+install.packages("ggwordcloud", repos = "http://cran.us.r-project.org")
+install.packages("viridis", repos = "http://cran.us.r-project.org")
+install.packages("scales", repos = "http://cran.us.r-project.org")
+
+library(tidyverse)
+library(ggwordcloud)
+library(viridis)
+library(scales)
+```
+
+
+# Loading Datasets
+
+```{r}
+#Main Data set
+ds_df <- read.csv("ds_salaries.csv")
+
+#Country codes Data set, used for cleaning later
+iso <- read.csv("wikipedia-iso-country-codes.csv")
+```
+
+
+# Inspecting the Data
+
+```{r}
+#Inspecting the dataset
+
+colnames(ds_df)  #List of column names
+```
+
+```{r}
+nrow(ds_df)  #How many rows are in the data frame?
+```
+
+```{r}
+dim(ds_df)   #Dimensions of the data frame
+```
+
+```{r}
+head(ds_df)  #Displays the first couple of rows of the data frame
+```
+
+```{r}
+str(ds_df)  #Display list of columns and data types
+```
+
+```{r}
+summary(ds_df)  #Statistical summary of data 
+```
+
+```{r}
+# Checking for any NA values
+any(is.na(ds_df))
+```
+```{r}
+
+#Checking for unique values per column
+ds_df %>%
+  summarise(work_year = n_distinct(work_year), experience_level = n_distinct(experience_level), employment_type = n_distinct(employment_type), job_title = n_distinct(job_title), salary = n_distinct(salary), salary_currency = n_distinct(salary_currency), salary_in_usd = n_distinct(salary_in_usd), employee_residence = n_distinct(employee_residence), remote_ratio = n_distinct(remote_ratio), company_location = n_distinct(company_location), company_size = n_distinct(company_size) )
+
+```
+
+# Cleaning the Data
+
+#### There are a few problems we need to fix:
+
+##### 1. The columns experience_level, employment_type, employee_residence, company_size and company_location contain abbreviations that may not be understood to some, we will rename the data contained in those columns to more descriptive labels.
+
+```{r}
+#Renamed abbreviations for the experience_level column
+
+ds_df$experience_level[ds_df$experience_level == "SE"] <- "Senior-level"
+ds_df$experience_level[ds_df$experience_level == "MI"] <- "Indermediate-level"
+ds_df$experience_level[ds_df$experience_level == "EN"] <- "Junior/Entry-level"
+ds_df$experience_level[ds_df$experience_level == "EX"] <- "Director/Executive-level"
+
+#Renamed abbreviations for the employment_type column
+
+ds_df$employment_type[ds_df$employment_type == "FT"] <- "Full Time"
+ds_df$employment_type[ds_df$employment_type == "PT"] <- "Part Time"
+ds_df$employment_type[ds_df$employment_type == "CT"] <- "Contract"
+ds_df$employment_type[ds_df$employment_type == "FL"] <- "Free Lance"
+
+#Renamed abbreviations for the company_size column
+
+ds_df$company_size[ds_df$company_size == "S"] <- "Small"
+ds_df$company_size[ds_df$company_size == "M"] <- "Medium"
+ds_df$company_size[ds_df$company_size == "L"] <- "Large"
+
+
+#Pulling columns from ds_df and iso into vectors that we can iterate from.
+
+employee_residence <- ds_df %>% pull(employee_residence)
+
+Alpha.2.code <- iso %>% pull(Alpha.2.code)
+
+Country_name <- iso %>% pull(English.short.name.lower.case)
+
+index <- 0
+new_employee_residence <- c()
+
+#Looping through each item in new_employee_residence
+
+for (item in employee_residence) {
+  
+#check where the item exists in Alpha.2.code, then assign the index found in Alpha.2.code to index
+
+    index <- which(Alpha.2.code == item)[1]
+    
+#use the index to find the corresponding Country_name, then append that Country_name to new_employee_residence, save to new_employee_residence
+    
+    new_employee_residence <- append(new_employee_residence, Country_name[index])
+}
+
+# assign new_employee_residence to the employee_residence column
+
+ds_df$employee_residence <- new_employee_residence
+
+```
+
+```{r}
+str(ds_df$experience_level)
+str(ds_df$employment_type)
+str(ds_df$employee_residence)
+str(ds_df$company_size)
+```
+
+```{r}
+
+#Pulling company_location from ds_df into a vector that we can iterate from.
+
+company_location <- ds_df %>% pull(company_location)
+
+index <- 0
+
+new_company_location <- c()
+
+
+#Same For loop as above, but for company_location
+for (item in company_location) {
+    index <- which(Alpha.2.code == item)[1]
+    new_company_location <- append(new_company_location, Country_name[index])
+}
+
+ds_df$company_location <- new_company_location
+
+ds_df$employee_residence[ds_df$employee_residence == "United States Of America"] <- "USA"
+ds_df$employee_residence[ds_df$employee_residence == "United Kingdom"] <- "UK"
+
+ds_df$company_location[ds_df$company_location == "United States Of America"] <- "USA"
+ds_df$company_location[ds_df$company_location == "United Kingdom"] <- "UK"
+
+```
+
+```{r}
+str(ds_df$company_location)
+```
+
+##### 2. We do not need the salary or salary_currency columns for our analysis.
+
+
+```{r}
+ds_df <- ds_df %>%
+  select(-c(salary, salary_currency))
+
+str(ds_df)
+```
+
+##### 3. Since remote_ratio contains ratios they all should have % at the end.
+
+```{r}
+
+#Add a % at the end of every element in remote_ratio
+remote_ratio <- ds_df %>% pull(remote_ratio)
+new_remote_ratio <- c()
+for(item in remote_ratio) {
+    new_remote_ratio <- append(new_remote_ratio, paste(item, "%", sep = ""))
+}
+
+ds_df$remote_ratio <- new_remote_ratio
+
+```
+
+```{r}
+str(ds_df$remote_ratio)
+```
+
+# Analysis
+
+```{r}
+# What's the distribution of experience_level?
+experience_level <- data.frame(experience_level = ds_df$experience_level)
+
+ggplot(data = experience_level) +
+     geom_bar(mapping = aes(x = experience_level, fill = experience_level))+
+     theme(axis.text.x = element_text(angle =20, hjust = 1))+
+     labs(title = "Distribution of Experience Level")
+```
+  
+Most people with data science related jobs are Senior level.  
+
+```{r}
+query <- ds_df %>%
+  select(job_title, experience_level) %>%
+  group_by(job_title, experience_level) %>%
+  summarise("Count" = n()) %>%
+  arrange(desc(Count)) %>%
+  filter(job_title == "Data Engineer" |job_title == "Data Scientist" |job_title == "Data Analyst" |job_title == "Machine Learning Engineer" |job_title == "Analytics Engineer" |job_title == "Data Architect" |job_title == "Research Scientist" |job_title == "Applied Scientist" |job_title == "Data Science Manager" |job_title == "Research Engineer")
+
+
+
+ggplot(query, aes(x = job_title, y = Count, fill = experience_level)) +
+  geom_col()+
+  theme(axis.text.x = element_text(angle =40, hjust = 1))+
+  labs(title = "Experience Level per Job Title", subtitle = "For the 10 most popular data science jobs")
+
+```
+The ratio of Seniors vs other experience levels is roughly the same per job title.
+
+```{r}
+employment_type <- data.frame(employment_type = ds_df$employment_type)
+
+ggplot(data = employment_type) +
+    geom_bar(mapping = aes(x = employment_type, fill = employment_type))+
+    labs(title = "Employment type distribution")
+```
+  
+Virtually all employees are full time.  
+```{r}
+job_title <- data.frame(table(job_title = ds_df$job_title))
+
+ggplot(data = job_title, aes(label = job_title, size = Freq, color = job_title)) +
+     geom_text_wordcloud(rm_outside = TRUE) +
+     scale_size_area(max_size = 20) +
+     theme_minimal()+
+     labs(title = "Word Cloud of Data Science Jobs")
+```
+
+```{r}
+salary <- data.frame(table(ds_df$salary_in_usd))
+
+salary$Var1 <- as.numeric(as.character(salary$Var1))
+
+ggplot(salary, aes(x = Var1)) +
+     geom_histogram(binwidth = 50000, fill="lightblue", color="black")+
+     scale_x_continuous(labels = scales::comma)+
+     labs(title = "Distribution of Salary", x = "Salary", y = "Count")
+
+print(summary(salary))
+```
+  
+The average salary for all Data Science related jobs is 130000\$, with half of all salaries lie between 68000\$ and 180000\$  
+```{r}
+
+
+
+ data <- ds_df %>%
+     select(job_title, salary_in_usd,
+     employee_residence) %>%
+     filter(job_title == "Data Analyst" | job_title == "BI Analyst" | job_title == "BI Data Analyst" | job_title == "Business Data Analyst" | job_title == "Data Analytics Specialist" | job_title == "Data Operations Analyst" | job_title == "Data Quality Analyst" | job_title == "Finance Data Analyst" | job_title == "Financial Data Analyst" | job_title == "Insight Analyst" | job_title == "Lead Data Analyst" | job_title == "Marketing Data Analyst" | job_title == "Principal Data Analyst" | job_title == "Product Data Analyst" | job_title == "Staff Data Analyst")%>%
+     group_by(employee_residence) %>%
+     summarise(mean = mean(salary_in_usd))
+     
+     
+world <- map_data("world")
+
+world %>%
+     merge(data, by.x = "region", by.y = "employee_residence", all.x = T) %>%
+     arrange(group, order) %>%
+     ggplot(aes(x = long, y = lat, group = group, fill = mean))+ 
+     geom_polygon(color = "white", linewidth = 0.2) +
+     scale_fill_viridis("", na.value = "gray90", option = "C") +
+     theme_minimal() +
+     theme(axis.text = element_blank(),
+           axis.title = element_blank(),
+           
+           
+           panel.grid = element_blank())+
+     labs(title = "Average Salary of Data Analysts per Country")
+```
+  
+Data Analysis in China make the most, followed by data analysts in the US.  
+```{r}
+ds_df$salary_in_usd <- as.numeric(ds_df$salary_in_usd)
+
+temp <- data.frame(table(ds_df$job_title))
+
+temp <- temp %>%
+  arrange(desc(Freq)) %>%
+  head(n = 70)
+
+data <- ds_df %>%
+  select(job_title, salary_in_usd) %>%
+  filter(job_title == "Data Engineer" | job_title == "Data Scientist" | job_title == "Data Analyst" | job_title == "Machine Learning Engineer" | job_title == "Analytics Engineer" | job_title == "Data Architect" | job_title == "Research Scientist" | job_title == "Applied Scientist" | job_title == "Data Science Manager" | job_title == "Research Engineer" | job_title == "ML Engineer" | job_title == "Data Manager" | job_title == "Machine Learning Scientist" | job_title == "Data Science Consultant" | job_title == "Data Analytics Manager" | job_title == "Computer Vision Engineer" | job_title == "AI Scientist" | job_title == "BI Data Analyst" | job_title == "Business Data Analyst" | job_title == "Data Specialist" | job_title == "BI Developer" | job_title == "Applied Machine Learning Scientist" | job_title == "AI Developer" | job_title == "Big Data Engineer" | job_title == "Director of Data Science" | job_title == "Machine Learning Infrastructure Engineer" | job_title == "Applied Data Scientist" | job_title == "Data Operations Engineer" | job_title == "ETL Developer" | job_title == "Head of Data")
+
+data %>%
+     ggplot(aes(job_title, salary_in_usd, fill = job_title))+
+     geom_boxplot()+
+     theme_bw()+
+     theme(axis.text.x = element_text(angle = 90), legend.position = "none")+
+     scale_y_continuous(labels = comma)+
+     labs(title = "Salary Ranges for Data Science Jobs", subtitle = "30 most popular data science jobs")
+
+```
+
+```{r}
+data <- data.frame(table(ds_df$employee_residence))
+
+world <- map_data("world")
+
+world %>%
+     merge(data, by.x = "region", by.y = "Var1", all.x = T) %>%
+     arrange(group, order) %>%
+     ggplot(aes(x = long, y = lat, group = group, fill = Freq))+
+     geom_polygon(color = "white", linewidth = 0.2) +
+     scale_fill_viridis("", na.value = "gray90", option = "C") +
+     theme_minimal() +
+     theme(axis.text = element_blank(),
+           axis.title = element_blank(),
+           panel.grid = element_blank())+
+     labs(title = "Employee Residence")
+```
+  
+Virtually all employees in the data live in the US.  
+
+```{r}
+remote_ratio <- data.frame(table(ds_df$remote_ratio))
+
+remote_ratio %>%
+     ggplot(aes(x = Var1, y = Freq))+
+     geom_col(fill = "lightblue", color = "black")+
+     xlab("Remote Ratio") +
+     ylab("Count")+
+     labs(title = "Distribution of Remote Ratio")
+```
+
+```{r}
+data <- data.frame(table(ds_df$company_location))
+
+world <- map_data("world")
+
+world %>%
+     merge(data, by.x = "region", by.y = "Var1", all.x = T) %>%
+     arrange(group, order) %>%
+     ggplot(aes(x = long, y = lat, group = group, fill = Freq))+
+     geom_polygon(color = "white", linewidth = 0.2) +
+     scale_fill_viridis("", na.value = "gray90", option = "C") +
+     theme_minimal() +
+     theme(axis.text = element_blank(),
+           axis.title = element_blank(),
+           panel.grid = element_blank())+
+     ggtitle("Company Location")
+```
+  
+Virtually all data science companies are located in the US.  
+
+
+
+```{r}
+company_size <- data.frame(table(ds_df$company_size))
+
+ company_size %>%
+     ggplot(aes(x = Var1, y = Freq))+
+     geom_col(fill = "lightblue", color = "black")+
+     labs(title = "Company Size Distribution", x = "Company Size", y = "Count")
+```
+  
+Most Companies are medium sized (50-250 employees).  
+
+# Conclusions
+
+In this analysis, we explored the salaries of data science jobs in the US using data from Kaggle. We found that the average salary of all data related jobs is 130,000\$, and half of all salaries lie between 68000\$ and 180000\$.We also identified some trends and patterns in the data science job market, such as most employee's experience being senior-level and most data science companies are located in the US with company sizes ranging from 50-250 employees.
+
+
+In conclusion, our analysis provides a valuable snapshot of the current state and trends of data science salaries in the US, which can help data scientists and employers make informed decisions and plan their careers.
+
+
